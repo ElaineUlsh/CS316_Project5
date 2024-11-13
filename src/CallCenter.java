@@ -1,12 +1,15 @@
 import java.util.LinkedList;
 import java.util.Queue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
 import static java.lang.Thread.sleep;
 
-// TODO: Each class in the superclass needs a run method (run()).
+// TODO: Implement each of the methods and consider creating a call center class that is runnable to call the other classes
 
 public class CallCenter {
     private static final int CUSTOMERS_PER_AGENT = 5;
@@ -90,7 +93,7 @@ public class CallCenter {
                     lock.unlock();
                 }
             }
-            }
+        }
 
         public void greet(int customerID) {
             System.out.println("Greeting customer " + customerID);
@@ -130,7 +133,13 @@ public class CallCenter {
         }
     } // Customer class
 
-    public static void main(String[] args) {
-        // complete this.
+    public static void main(String[] args) throws Exception {
+        ExecutorService es = Executors.newFixedThreadPool(NUMBER_OF_THREADS);
+
+        for (int i = 0; i < NUMBER_OF_CUSTOMERS; i++) {
+            es.submit(new Customer(i)); // TODO: Consider calling a task instead of the Customer and have the task handle the customers
+        }
+        es.shutdown();
+        es.awaitTermination(120, TimeUnit.SECONDS);
     }
 }
