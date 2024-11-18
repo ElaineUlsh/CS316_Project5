@@ -9,8 +9,6 @@ import java.util.concurrent.locks.ReentrantLock;
 
 import static java.lang.Thread.sleep;
 
-// TODO: Implement each of the methods and consider creating a call center class that is runnable to call the other classes
-
 public class CallCenter {
     private static final int CUSTOMERS_PER_AGENT = 5;
     private static final int NUMBER_OF_AGENTS = 3;
@@ -19,11 +17,13 @@ public class CallCenter {
 
     private final static Queue<Customer> wait = new LinkedList<>();
     private final static Queue<Customer> serve = new LinkedList<>();
-    private final static ReentrantLock lock = new ReentrantLock();
-    private final static Condition waitNotEmpty = lock.newCondition();
-    private final static Condition waitNotFull = lock.newCondition();
-    private final static Condition serveNotEmpty = lock.newCondition();
-    private final static Condition serveNotFull = lock.newCondition();
+    private final static ReentrantLock waitLock = new ReentrantLock();
+
+    private final static ReentrantLock serveLock = new ReentrantLock();
+    private final static Condition waitNotEmpty = waitLock.newCondition();
+    //private final static Condition waitNotFull = waitLock.newCondition();
+    private final static Condition serveNotEmpty = serveLock.newCondition();
+    //private final static Condition serveNotFull = serveLock.newCondition();
 
 
     // simulates a customer service agent who answers customer calls
@@ -41,8 +41,14 @@ public class CallCenter {
             // remove customer from the serve queue
             // calls the serve method
             for (int i = 0; i < CUSTOMERS_PER_AGENT; i++) {
-                Customer customer = serve.remove();
-                serve(customer.ID);
+                Customer customer = null;
+                serveLock.lock();
+                try {
+                    customer = serve.remove();
+                } finally {
+                    serveLock.unlock();
+                }
+                serve(customer.getID());
             }
         }
 
@@ -69,29 +75,29 @@ public class CallCenter {
             // places the customer into the serve queue
             // announces teh customer's place in the server queue
 
-            lock.lock();
             for (int i = 0; i < NUMBER_OF_CUSTOMERS; i++) {
+                Customer customer = null;
+                waitLock.lock();
                 try {
                     while (wait.isEmpty()) {
                         waitNotEmpty.await();
                     }
-                    Customer customer = wait.remove();
-                    waitNotFull.signal();
-
-                    greet(customer.ID);
-
-                    while (serve.size() == NUMBER_OF_CUSTOMERS) {
-                        serveNotFull.await();
-                    }
-                    serve.add(customer);
-                    serveNotEmpty.signal();
-
-                    System.out.println("Customer " + customer.ID + " is waiting to be serviced.");
+                    customer = wait.remove();
                 } catch (InterruptedException e) {
                     e.printStackTrace();
                 } finally {
-                    lock.unlock();
+                    waitLock.unlock();
                 }
+                greet(customer.getID());
+
+                serveLock.lock();
+                try {
+                    serve.add(customer);
+                    System.out.println("Customer position in the serve queue is " + serve.size());
+                } finally {
+                    serveLock.unlock();
+                }
+                serveNotEmpty.signal();
             }
         }
 
@@ -118,28 +124,32 @@ public class CallCenter {
         public void run() {
             // places customer into the wait queue
             // each customer is a separate runnable task
-            lock.lock();
+            waitLock.lock();
             try {
-                while (wait.size() == NUMBER_OF_CUSTOMERS) {
-                    waitNotFull.await();
-                }
-                wait.add(new Customer(ID));
-                waitNotEmpty.signal();
-            } catch (InterruptedException e) {
-                e.printStackTrace();
+                wait.add(this);
             } finally {
-                lock.unlock();
+                waitLock.unlock();
             }
+            waitNotEmpty.signal();
+        }
+
+        public int getID() {
+            return ID;
         }
     } // Customer class
 
     public static void main(String[] args) throws Exception {
         ExecutorService es = Executors.newFixedThreadPool(NUMBER_OF_THREADS);
 
-        for (int i = 0; i < NUMBER_OF_CUSTOMERS; i++) {
-            es.submit(new Customer(i)); // TODO: Consider calling a task instead of the Customer and have the task handle the customers
+        es.submit(new Greeter());
+        for (int j = 1; j <= NUMBER_OF_AGENTS; j++) {
+            es.submit(new Agent(j));
         }
+
+        for (int i = 1; i <= NUMBER_OF_CUSTOMERS; i++) {
+            es.submit(new Customer(i));
+        }
+
         es.shutdown();
-        es.awaitTermination(120, TimeUnit.SECONDS);
     }
 }
